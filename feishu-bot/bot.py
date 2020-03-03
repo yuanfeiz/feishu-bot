@@ -6,7 +6,6 @@ from cachetools import TTLCache
 from asyncache import cached
 import asyncio
 import json
-from PIL import Image
 from tenacity import retry, retry_if_exception_message, stop_after_attempt, wait_fixed, before_sleep_log
 from .errors import RequestError, TokenExpiredError
 
@@ -15,13 +14,13 @@ class FeishuBot:
     def __init__(self,
                  app_id,
                  app_secret,
-                 base_url=None,
+                 base_url='https://open.feishu.cn/open-apis',
                  token_ttl=3600,
                  user_ttl=300,
                  group_ttl=300):
         self.app_id = app_id
         self.app_secret = app_secret
-        self.base_url = base_url or ''
+        self.base_url = base_url
         self.session = AsyncHTMLSession()
         self.token_cache = TTLCache(1, token_ttl)
         self.group_cache = TTLCache(1, group_ttl)
@@ -130,7 +129,7 @@ class FeishuBot:
         results = await self.send_to_groups('text', {'text': text})
         logger.debug(f'Sent {text=} to {[g["name"] for g, _ in results]}')
 
-    async def upload_image(self, url, return_size=False):
+    async def upload_image(self, url):
         """
         Upload image of the given url
         """
@@ -143,11 +142,7 @@ class FeishuBot:
         image_key = resp['data']['image_key']
         logger.debug(f'uploaded image: {url=} {image_key=}')
 
-        if return_size:
-            img = Image.open(BytesIO(img_resp.content))
-            return image_key, img.size
-        else:
-            return image_key
+        return image_key
 
     async def send_image(self, image_url):
         """
