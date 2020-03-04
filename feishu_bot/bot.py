@@ -1,30 +1,25 @@
 from io import BytesIO
-from requests_html import AsyncHTMLSession
-import requests
 from .log import logger
-from cachetools import TTLCache
+from cachetools import TTLCache, keys
 from asyncache import cached
 import asyncio
 import json
 from tenacity import retry, retry_if_exception_message, stop_after_attempt, wait_fixed, before_sleep_log
 from .errors import RequestError, TokenExpiredError
+from datetime import timedelta
+from aiohttp import ClientSession, ClientResponse
 
 
 class FeishuBot:
     def __init__(self,
                  app_id,
                  app_secret,
-                 base_url='https://open.feishu.cn/open-apis',
-                 token_ttl=3600,
-                 user_ttl=300,
-                 group_ttl=300):
+                 base_url='https://open.feishu.cn/open-apis'):
         self.app_id = app_id
         self.app_secret = app_secret
         self.base_url = base_url
-        self.session = AsyncHTMLSession()
-        self.token_cache = TTLCache(1, token_ttl)
-        self.group_cache = TTLCache(1, group_ttl)
-        self.user_cache = TTLCache(32, user_ttl)
+        self.session = ClientSession()
+        self.token_cache = TTLCache(1, timedelta(hours=1).seconds)
 
     @retry(stop=stop_after_attempt(3),
            wait=wait_fixed(1),
@@ -43,13 +38,9 @@ class FeishuBot:
         if 'json' in kwargs:
             logger.debug(f'payload: {json.dumps(kwargs["json"])}')
 
-        resp: requests.Response = await self.session.request(method,
-                                                             url,
-                                                             *args,
-                                                             headers=headers,
-                                                             **kwargs)
-
-        resp_json = resp.json()
+        resp_json = {}
+        async with self.session.request(method, url, *args, headers=headers, **kwargs) as resp:
+            resp_json = await resp.json()
 
         code = resp_json['code']
         msg = resp_json['msg']
@@ -59,11 +50,11 @@ class FeishuBot:
             if code == 99991663:
                 # tenant access token error
                 # invalidate the cache and retry again
-                self.token_cache.expire()
+                self.token_cache.clear()
                 raise TokenExpiredError(code, msg)
             raise RequestError(code, msg)
 
-        logger.debug(f'requested: {url=} {resp_json=}')
+        logger.debug(f'requested: url={url} response={resp_json}')
 
         return resp_json
 
@@ -74,9 +65,12 @@ class FeishuBot:
         return await self.request('POST', endpoint, *args, **kwargs)
 
     # refresh every 1 hour
-    @cached(self.token_cache)
     async def get_access_token(self):
-        logger.debug('getting new token')
+        cached_token = self.token_cache.get(keys.hashkey(self))
+
+        if cached_token:
+            return cached_token
+
         url = f'/auth/v3/app_access_token/internal/'
         resp = await self.post(url,
                                no_auth=True,
@@ -84,17 +78,19 @@ class FeishuBot:
                                    'app_id': self.app_id,
                                    'app_secret': self.app_secret
                                })
+        token = resp['tenant_access_token']
+        self.token_cache[keys.hashkey(self)] = token
 
-        return resp['tenant_access_token']
+        return token 
 
-    @cached(self.user_cache)
+    @cached(TTLCache(32, timedelta(days=1).seconds))
     async def get_user_detail(self, open_id: str):
         url = f'/contact/v1/user/batch_get'
         resp = await self.get(url, params={'open_ids': open_id})
         return resp['data']['user_infos'][0]
 
     # refresh every 5 minutes
-    @cached(self.group_cache)
+    @cached(TTLCache(1, timedelta(minutes=5).seconds))
     async def get_groups(self):
         resp = await self.get('/chat/v4/list')
         return resp['data']['groups']
@@ -127,7 +123,7 @@ class FeishuBot:
         Send plain text
         """
         results = await self.send_to_groups('text', {'text': text})
-        logger.debug(f'Sent {text=} to {[g["name"] for g, _ in results]}')
+        logger.debug(f'Sent text={text} to {[g["name"] for g, _ in results]}')
 
     async def upload_image(self, url):
         """
@@ -140,7 +136,7 @@ class FeishuBot:
                                stream=True)
 
         image_key = resp['data']['image_key']
-        logger.debug(f'uploaded image: {url=} {image_key=}')
+        logger.debug(f'uploaded image: url={url} image_key={image_key}')
 
         return image_key
 
@@ -150,7 +146,7 @@ class FeishuBot:
         """
         image_key = await self.upload_image(image_url)
         results = await self.send_to_groups('image', {'image_key': image_key})
-        logger.debug(f'Sent {image_url=} to {[g["name"] for g, _ in results]}')
+        logger.debug(f'Sent image_url={image_url} to {[g["name"] for g, _ in results]}')
 
     async def send_post(self, title, content):
         """
@@ -164,7 +160,7 @@ class FeishuBot:
                     'content': content
                 }
             }})
-        logger.debug(f'Sent {title=} to {[g["name"] for g, _ in results]}')
+        logger.debug(f'Sent title={title} to {[g["name"] for g, _ in results]}')
 
     async def send_card(self, card, is_shared=False):
         """
@@ -175,4 +171,4 @@ class FeishuBot:
         results = await self.send_to_groups('interactive',
                                             card=card,
                                             is_shared=is_shared)
-        logger.debug(f'Sent {card=} to {[g["name"] for g, _ in results]}')
+        logger.debug(f'Sent {card} to {[g["name"] for g, _ in results]}')
