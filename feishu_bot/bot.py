@@ -130,10 +130,7 @@ class FeishuBot:
         Upload image of the given url
         """
         img_resp: requests.Response = await self.session.get(url)
-        resp = await self.post('/image/v4/put/',
-                               data={'image_type': 'message'},
-                               files={"image": img_resp.content},
-                               stream=True)
+        resp = await self.post('/image/v4/put/', data={'image_type': 'message', 'image': img_resp.content})
 
         image_key = resp['data']['image_key']
         logger.debug(f'uploaded image: url={url} image_key={image_key}')
