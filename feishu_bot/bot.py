@@ -14,11 +14,12 @@ class FeishuBot:
     def __init__(self,
                  app_id,
                  app_secret,
-                 base_url='https://open.feishu.cn/open-apis'):
+                 base_url='https://open.feishu.cn/open-apis',
+                 token_ttl=None):
         self.app_id = app_id
         self.app_secret = app_secret
         self.base_url = base_url
-        self.token_cache = TTLCache(1, timedelta(hours=1).seconds)
+        self.token_cache = TTLCache(1, token_ttl or timedelta(hours=1).seconds)
 
     @retry(stop=stop_after_attempt(3),
            wait=wait_fixed(1),

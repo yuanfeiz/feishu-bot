@@ -16,6 +16,7 @@ aiohttp = "*"
 tenacity = "*"
 cachetools = "*"
 asyncache = "*"
+pook = {editable = true,git = "git://github.com/yuanfeiz/pook.git"}
 
 [requires]
 python_version = "3.8"
