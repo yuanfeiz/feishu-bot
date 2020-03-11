@@ -4,10 +4,10 @@ from cachetools import TTLCache, keys
 from asyncache import cached
 import asyncio
 import json
-from tenacity import retry, retry_if_exception_message, stop_after_attempt, wait_fixed, before_sleep_log
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed, before_sleep_log
 from .errors import RequestError, TokenExpiredError
 from datetime import timedelta
-from aiohttp import ClientSession, ClientResponse
+from aiohttp import ClientSession, ClientResponse, MultipartWriter, FormData
 
 
 class FeishuBot:
@@ -18,29 +18,32 @@ class FeishuBot:
         self.app_id = app_id
         self.app_secret = app_secret
         self.base_url = base_url
-        self.session = ClientSession()
         self.token_cache = TTLCache(1, timedelta(hours=1).seconds)
 
     @retry(stop=stop_after_attempt(3),
            wait=wait_fixed(1),
-           retry=retry_if_exception_message(match='.*tenant_access_token.*'))
+           retry=retry_if_exception_type(TokenExpiredError))
     async def request(self, method, endpoint, *args, **kwargs):
         url = f'{self.base_url}{endpoint}'
         no_auth = kwargs.pop('no_auth', False)
         if no_auth:
             # skip auth, for getting token itself
-            headers = None
+            headers = kwargs.pop('headers', {})
         else:
             # attach the token by default
             token = await self.get_access_token()
-            headers = {'Authorization': f'Bearer {token}'}
+            headers = {
+                'Authorization': f'Bearer {token}',
+                **kwargs.pop('headers', {})
+            }
 
-        if 'json' in kwargs:
-            logger.debug(f'payload: {json.dumps(kwargs["json"])}')
-
-        resp_json = {}
-        async with self.session.request(method, url, *args, headers=headers, **kwargs) as resp:
-            resp_json = await resp.json()
+        async with ClientSession() as session:
+            async with session.request(method,
+                                       url,
+                                       *args,
+                                       headers=headers,
+                                       **kwargs) as resp:
+                resp_json = await resp.json()
 
         code = resp_json['code']
         msg = resp_json['msg']
@@ -81,7 +84,7 @@ class FeishuBot:
         token = resp['tenant_access_token']
         self.token_cache[keys.hashkey(self)] = token
 
-        return token 
+        return token
 
     @cached(TTLCache(32, timedelta(days=1).seconds))
     async def get_user_detail(self, open_id: str):
@@ -129,8 +132,14 @@ class FeishuBot:
         """
         Upload image of the given url
         """
-        img_resp: requests.Response = await self.session.get(url)
-        resp = await self.post('/image/v4/put/', data={'image_type': 'message', 'image': img_resp.content})
+        async with ClientSession() as session:
+            img_resp = await session.get(url)
+
+        resp = await self.post('/image/v4/put/',
+                               data={
+                                   'image_type': 'message',
+                                   'image': await img_resp.content.read()
+                               })
 
         image_key = resp['data']['image_key']
         logger.debug(f'uploaded image: url={url} image_key={image_key}')
@@ -143,7 +152,8 @@ class FeishuBot:
         """
         image_key = await self.upload_image(image_url)
         results = await self.send_to_groups('image', {'image_key': image_key})
-        logger.debug(f'Sent image_url={image_url} to {[g["name"] for g, _ in results]}')
+        logger.debug(
+            f'Sent image_url={image_url} to {[g["name"] for g, _ in results]}')
 
     async def send_post(self, title, content):
         """
@@ -157,7 +167,8 @@ class FeishuBot:
                     'content': content
                 }
             }})
-        logger.debug(f'Sent title={title} to {[g["name"] for g, _ in results]}')
+        logger.debug(
+            f'Sent title={title} to {[g["name"] for g, _ in results]}')
 
     async def send_card(self, card, is_shared=False):
         """

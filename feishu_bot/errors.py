@@ -4,6 +4,9 @@ class RequestError(Exception):
         self.code = code
         self.message = message
 
+    def __str__(self):
+        return f'{self.message} (code={self.code})'
+
 
 class TokenExpiredError(RequestError):
     """
