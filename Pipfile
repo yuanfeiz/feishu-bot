@@ -10,13 +10,13 @@ pytest = "*"
 alt-pytest-asyncio = "*"
 yapf = "*"
 pytest-watch = "*"
+pook = {editable = true,git = "git://github.com/yuanfeiz/pook.git"}
 
 [packages]
 aiohttp = "*"
 tenacity = "*"
 cachetools = "*"
 asyncache = "*"
-pook = {editable = true,git = "git://github.com/yuanfeiz/pook.git"}
 
 [requires]
 python_version = "3.8"
