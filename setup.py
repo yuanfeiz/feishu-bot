@@ -9,7 +9,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="feishu_bot",  # Replace with your own username
-    version="0.0.1",
+    version="0.0.2",
     author="Yuanefi Zhu",
     author_email="abovemoon@outlook.com",
     description="SDK for interacting with Feishu(previously Lark)",
