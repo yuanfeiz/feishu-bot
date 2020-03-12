@@ -135,11 +135,12 @@ class FeishuBot:
         """
         async with ClientSession() as session:
             img_resp = await session.get(url)
+            b = await img_resp.content.read()
 
         resp = await self.post('/image/v4/put/',
                                data={
                                    'image_type': 'message',
-                                   'image': await img_resp.content.read()
+                                   'image': b
                                })
 
         image_key = resp['data']['image_key']
