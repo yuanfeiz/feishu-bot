@@ -2,6 +2,7 @@ from feishu_bot import FeishuBot
 import pytest
 import pook
 import asyncio
+from datetime import datetime
 
 
 async def test_init_bot():
@@ -172,3 +173,38 @@ async def test_auto_invalidate_token_cache():
         assert len(matches) == 2
         assert matches[0].headers == {'Authorization': 'Bearer test-token'}
         assert matches[1].headers == {'Authorization': 'Bearer test-token2'}
+
+
+async def test_update_group_name():
+    with pook.use():
+        get_token_mock_1 = pook.post(
+            'https://foo.com/api/auth/v3/app_access_token/internal/',
+            response_json={
+                'code': 0,
+                'msg': 'OK',
+                'tenant_access_token': 'test-token'
+            })
+        pook.get('https://foo.com/api/chat/v4/list',
+                 response_json={
+                     'code': 0,
+                     'msg': 'OK',
+                     'data': {
+                         'groups': [{
+                             'chat_id': 'test_chat_id'
+                         }]
+                     }
+                 })
+
+        new_name = f'#名片审核 {datetime.now().isoformat()}'
+        update_mock = pook.post('https://foo.com/api/chat/v4/update/',
+                                response_json={
+                                    'code': 0,
+                                    'msg': 'OK',
+                                })
+
+        bot = FeishuBot('foo', 'bar', 'https://foo.com/api')
+        groups = await bot.get_groups()
+        g = groups[0]
+        await bot.update_group_name(g['chat_id'], new_name)
+
+        assert update_mock.calls == 1
