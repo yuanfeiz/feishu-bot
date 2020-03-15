@@ -4,12 +4,12 @@ url = "https://mirrors.aliyun.com/pypi/simple"
 verify_ssl = true
 
 [dev-packages]
-pysocks = "*"
-yapf = "*"
+aioresponses = "*"
 pytest = "*"
+alt-pytest-asyncio = "*"
+yapf = "*"
 pytest-watch = "*"
-pytest-asyncio = "*"
-pook = "*"
+pook = {editable = true,git = "git://github.com/yuanfeiz/pook.git"}
 
 [packages]
 aiohttp = "*"
