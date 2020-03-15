@@ -21,10 +21,7 @@ class FeishuBot:
         self.session = ClientSession()
         self.token_cache = TTLCache(1, timedelta(hours=1).seconds)
 
-    @retry(stop=stop_after_attempt(3),
-           wait=wait_fixed(1),
-           retry=retry_if_exception_message(match='.*tenant_access_token.*'))
-    async def request(self, method, endpoint, *args, **kwargs):
+    async def request(self, method, endpoint, **kwargs):
         url = f'{self.base_url}{endpoint}'
         no_auth = kwargs.pop('no_auth', False)
         if no_auth:
@@ -39,7 +36,8 @@ class FeishuBot:
             logger.debug(f'payload: {json.dumps(kwargs["json"])}')
 
         resp_json = {}
-        async with self.session.request(method, url, *args, headers=headers, **kwargs) as resp:
+        async with self.session.request(method, url, headers=headers,
+                                        **kwargs) as resp:
             resp_json = await resp.json()
 
         code = resp_json['code']
@@ -81,7 +79,7 @@ class FeishuBot:
         token = resp['tenant_access_token']
         self.token_cache[keys.hashkey(self)] = token
 
-        return token 
+        return token
 
     @cached(TTLCache(32, timedelta(days=1).seconds))
     async def get_user_detail(self, open_id: str):
@@ -94,6 +92,18 @@ class FeishuBot:
     async def get_groups(self):
         resp = await self.get('/chat/v4/list')
         return resp['data']['groups']
+
+    async def update_group_name(self, chat_id: str, new_name: str):
+        """
+        Update group name
+        """
+        resp = await self.post('/chat/v4/update/',
+                               json={
+                                   'chat_id': chat_id,
+                                   'name': new_name
+                               })
+
+        return resp
 
     async def send_to_groups(self,
                              msg_type,
@@ -129,7 +139,7 @@ class FeishuBot:
         """
         Upload image of the given url
         """
-        img_resp: requests.Response = await self.session.get(url)
+        img_resp = await self.get(url)
         resp = await self.post('/image/v4/put/',
                                data={'image_type': 'message'},
                                files={"image": img_resp.content},
@@ -146,7 +156,8 @@ class FeishuBot:
         """
         image_key = await self.upload_image(image_url)
         results = await self.send_to_groups('image', {'image_key': image_key})
-        logger.debug(f'Sent image_url={image_url} to {[g["name"] for g, _ in results]}')
+        logger.debug(
+            f'Sent image_url={image_url} to {[g["name"] for g, _ in results]}')
 
     async def send_post(self, title, content):
         """
@@ -160,7 +171,8 @@ class FeishuBot:
                     'content': content
                 }
             }})
-        logger.debug(f'Sent title={title} to {[g["name"] for g, _ in results]}')
+        logger.debug(
+            f'Sent title={title} to {[g["name"] for g, _ in results]}')
 
     async def send_card(self, card, is_shared=False):
         """
