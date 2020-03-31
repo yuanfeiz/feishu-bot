@@ -116,11 +116,19 @@ class FeishuBot:
                              content=None,
                              card=None,
                              **kwargs):
-        groups = await self.get_groups()
+        groups = kwargs.get('groups')
+        if groups is None:
+            # by default send the message to all groups
+            detailed_groups = await self.get_groups()
+            groups = [g['chat_id'] for g in detailed_groups]
+        elif isinstance(groups, str):
+            # single chat_id
+            groups = [groups]
+        
         tasks = []
         for g in groups:
             payload = {
-                'chat_id': g['chat_id'],
+                'chat_id': g,
                 'msg_type': msg_type,
             }
             if card is not None:
@@ -132,14 +140,15 @@ class FeishuBot:
 
         results = await asyncio.gather(*tasks)
 
-        return zip(groups, results)
+        logger.debug(f'Sent {msg_type}={content} to {[g for g in groups]}')
 
-    async def send_text(self, text: str):
+        return results
+
+    async def send_text(self, text: str, groups=None):
         """
         Send plain text
         """
-        results = await self.send_to_groups('text', {'text': text})
-        logger.debug(f'Sent text={text} to {[g["name"] for g, _ in results]}')
+        return await self.send_to_groups('text', {'text': text}, groups=groups)
 
     async def upload_image(self, url):
         """
@@ -160,37 +169,32 @@ class FeishuBot:
 
         return image_key
 
-    async def send_image(self, image_url):
+    async def send_image(self, image_url, groups=None):
         """
         Send image
         """
         image_key = await self.upload_image(image_url)
-        results = await self.send_to_groups('image', {'image_key': image_key})
-        logger.debug(
-            f'Sent image_url={image_url} to {[g["name"] for g, _ in results]}')
+        return await self.send_to_groups('image', {'image_key': image_key}, groups=groups)
 
-    async def send_post(self, title, content):
+    async def send_post(self, title, content, groups=None):
         """
         Send post(image+text)
         documentation: https://open.feishu.cn/document/ukTMukTMukTM/uMDMxEjLzATMx4yMwETM
         """
-        results = await self.send_to_groups(
+        return await self.send_to_groups(
             'post', {'post': {
                 'zh_cn': {
                     'title': title,
                     'content': content
                 }
-            }})
-        logger.debug(
-            f'Sent title={title} to {[g["name"] for g, _ in results]}')
+            }}, groups=groups)
 
-    async def send_card(self, card, is_shared=False):
+    async def send_card(self, card, is_shared=False, groups=None):
         """
         Send interactive card
         documentation: https://open.feishu.cn/document/ukTMukTMukTM/ugTNwUjL4UDM14CO1ATN 
         """
         assert isinstance(card, dict)
-        results = await self.send_to_groups('interactive',
+        return await self.send_to_groups('interactive',
                                             card=card,
-                                            is_shared=is_shared)
-        logger.debug(f'Sent {card} to {[g["name"] for g, _ in results]}')
+                                            is_shared=is_shared, groups=groups)
